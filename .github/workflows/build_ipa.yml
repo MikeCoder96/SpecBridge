@@ -64,6 +64,7 @@ jobs:
             CODE_SIGN_IDENTITY='' \
             PROVISIONING_PROFILE='' \
             ENABLE_BITCODE=NO \
+            SWIFT_VERSION=5 \
             SWIFT_STRICT_CONCURRENCY=minimal \
             OTHER_SWIFT_FLAGS='-strict-concurrency=minimal'"
           if [ -n "$WORKSPACE" ]; then
