@@ -32,9 +32,9 @@ class RTMPManager: ObservableObject {
             )*/
             // Main spec settings for 2160x2880 @ 30fps with good quality (Test)
             let videoSettings = VideoCodecSettings(
-                videoSize: .init(width: 2160, height: 2880), 
-                bitRate: 12000 * 1000,                       
-                profileLevel: kVTProfileLevel_H264_High_AutoLevel as String, 
+                videoSize: .init(width: 2208, height: 2944), 
+                bitRate: 17000 * 1000,                       
+                profileLevel: kVTProfileLevel_H264_High_5_2 as String, 
                 scalingMode: .trim,
                 maxKeyFrameIntervalDuration: 2,
                 expectedFrameRate: 30                        
