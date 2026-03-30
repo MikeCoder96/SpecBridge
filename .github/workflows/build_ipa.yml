@@ -1,0 +1,92 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build SpecBridge IPA
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 15
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('**/*.xcodeproj/project.pbxproj', '**/*.xcworkspace/contents.xcworkspacedata') }}
+          restore-keys: |
+            ${{ runner.os }}-deriveddata-
+
+      - name: Resolve Swift packages
+        run: |
+          WORKSPACE=$(find . -maxdepth 2 -name '*.xcworkspace' ! -path '*.xcodeproj/*' 2>/dev/null | head -1)
+          if [ -n "$WORKSPACE" ]; then
+            xcodebuild -resolvePackageDependencies \
+              -workspace "$WORKSPACE" \
+              -scheme SpecBridge \
+              -clonedSourcePackagesDirPath .spm-packages
+          else
+            XCODEPROJ=$(find . -maxdepth 2 -name '*.xcodeproj' | head -1)
+            xcodebuild -resolvePackageDependencies \
+              -project "$XCODEPROJ" \
+              -scheme SpecBridge \
+              -clonedSourcePackagesDirPath .spm-packages
+          fi
+
+      - name: Build app
+        run: |
+          WORKSPACE=$(find . -maxdepth 2 -name '*.xcworkspace' ! -path '*.xcodeproj/*' 2>/dev/null | head -1)
+          BUILD_CMD="xcodebuild \
+            -scheme SpecBridge \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            PROVISIONING_PROFILE='' \
+            ENABLE_BITCODE=NO"
+          if [ -n "$WORKSPACE" ]; then
+            eval "$BUILD_CMD -workspace '$WORKSPACE'"
+          else
+            XCODEPROJ=$(find . -maxdepth 2 -name '*.xcodeproj' | head -1)
+            eval "$BUILD_CMD -project '$XCODEPROJ'"
+          fi
+
+      - name: Package IPA
+        run: |
+          APP_PATH=$(find DerivedData -name '*.app' -not -path '*/intermediates*' | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: no .app found in DerivedData"
+            exit 1
+          fi
+          mkdir -p IPA/Payload
+          cp -R "$APP_PATH" IPA/Payload/
+          cd IPA && zip -r ../SpecBridge.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpecBridge-${{ github.sha }}
+          path: SpecBridge.ipa
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Build summary
+        run: |
+          echo "### Build complete" >> $GITHUB_STEP_SUMMARY
+          echo "**SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Download the IPA from the **Actions → Artifacts** tab and sideload via AltStore/SideStore." >> $GITHUB_STEP_SUMMARY
