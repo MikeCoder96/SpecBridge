@@ -53,7 +53,7 @@ struct SetupView: View {
                 .textInputAutocapitalization(.never)
                 .padding(.horizontal)
 
-            TextField("Stream key (e.g. rayban)", text: $inputKey)
+            TextField("Title of the live stream", text: $inputKey)
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)

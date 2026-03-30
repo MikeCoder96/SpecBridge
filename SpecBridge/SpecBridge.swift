@@ -22,13 +22,22 @@ class RTMPManager: ObservableObject {
         connectionStatus = "Connecting..."
 
         do {
-            let videoSettings = VideoCodecSettings(
+            /*let videoSettings = VideoCodecSettings(
                 videoSize: .init(width: 720, height: 1280),
                 bitRate: 2500 * 1000,
                 profileLevel: kVTProfileLevel_H264_High_3_1 as String,
                 scalingMode: .trim,
                 maxKeyFrameIntervalDuration: 2,
                 expectedFrameRate: 24
+            )*/
+            // Main spec settings for 2160x2880 @ 30fps with good quality (Test)
+            let videoSettings = VideoCodecSettings(
+                videoSize: .init(width: 2160, height: 2880), 
+                bitRate: 12000 * 1000,                       
+                profileLevel: kVTProfileLevel_H264_High_AutoLevel as String, 
+                scalingMode: .trim,
+                maxKeyFrameIntervalDuration: 2,
+                expectedFrameRate: 30                        
             )
             try await rtmpStream.setVideoSettings(videoSettings)
             try await rtmpConnection.connect(rtmpURL)
