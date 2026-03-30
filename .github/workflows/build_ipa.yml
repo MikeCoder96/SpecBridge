@@ -60,7 +60,9 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY='' \
             PROVISIONING_PROFILE='' \
-            ENABLE_BITCODE=NO"
+            ENABLE_BITCODE=NO \
+            SWIFT_STRICT_CONCURRENCY=minimal \
+            OTHER_SWIFT_FLAGS='-strict-concurrency=minimal'"
           if [ -n "$WORKSPACE" ]; then
             eval "$BUILD_CMD -workspace '$WORKSPACE'"
           else
