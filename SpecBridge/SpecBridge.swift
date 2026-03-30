@@ -18,41 +18,54 @@ class RTMPManager: ObservableObject {
     }
 
     func startBroadcast(host: String, streamKey: String) async {
-        let rtmpURL = "rtmp://\(host):1935/live"
+        // 1. Pulizia URL: Se l'utente incolla già "rtmp://", non lo duplichiamo
+        let rtmpURL: String
+        if host.lowercased().hasPrefix("rtmp") {
+            rtmpURL = host
+        } else {
+            rtmpURL = "rtmp://\(host)/live" // Fallback per MediaMTX o simili
+        }
+        
         connectionStatus = "Connecting..."
 
         do {
-            /*let videoSettings = VideoCodecSettings(
-                videoSize: .init(width: 720, height: 1280),
-                bitRate: 2500 * 1000,
-                profileLevel: kVTProfileLevel_H264_High_3_1 as String,
-                scalingMode: .trim,
-                maxKeyFrameIntervalDuration: 2,
-                expectedFrameRate: 24
-            )*/
-            // Main spec settings for 2160x2880 @ 30fps with good quality (Test)
+            // 2. Configurazione dinamica del Bitrate
+            // Se è Twitch, forziamo un limite di sicurezza (6Mbps)
+            // Se è YouTube o Custom, possiamo osare di più se la connessione regge
+            let isTwitch = host.contains("twitch.tv")
+            let targetBitrate = isTwitch ? 6000 * 1000 : 12000 * 1000
+            
+            // Nota: 2208x2944 è molto pesante. Per stabilità suggerisco 1080x1440
+            // ma mantengo i tuoi valori adattandoli
             let videoSettings = VideoCodecSettings(
-                videoSize: .init(width: 2208, height: 2944), 
-                bitRate: 17000 * 1000,                       
-                profileLevel: kVTProfileLevel_H264_High_5_2 as String, 
+                videoSize: .init(width: 2208, height: 2944),
+                bitRate: targetBitrate,
+                profileLevel: kVTProfileLevel_H264_High_5_2 as String,
                 scalingMode: .trim,
-                maxKeyFrameIntervalDuration: 2,
-                expectedFrameRate: 30                        
+                maxKeyFrameIntervalDuration: 2, // Fondamentale per piattaforme social
+                expectedFrameRate: 30
             )
+
             try await rtmpStream.setVideoSettings(videoSettings)
+            
+            // 3. Connessione e Pubblicazione
             try await rtmpConnection.connect(rtmpURL)
+            
+            // Alcune piattaforme richiedono lo streamKey nel publish
             try await rtmpStream.publish(streamKey)
 
             connectionStatus = "Live"
             isBroadcasting = true
         } catch {
-            connectionStatus = "Failed: \(error.localizedDescription)"
+            connectionStatus = "Error: \(error.localizedDescription)"
             isBroadcasting = false
+            print("RTMP Error: \(error)")
         }
     }
 
     func stopBroadcast() async {
         do {
+            try await rtmpStream.close()
             try await rtmpConnection.close()
         } catch {
             print("Error closing stream: \(error)")
@@ -62,7 +75,11 @@ class RTMPManager: ObservableObject {
     }
 
     func processVideoFrame(_ buffer: CMSampleBuffer) {
+        // Evitiamo di processare frame se non siamo in onda
+        guard isBroadcasting else { return }
+        
         Task {
+            // HaishinKit 1.9.0+ usa append per i sample buffer
             try? await rtmpStream.append(buffer)
         }
     }
