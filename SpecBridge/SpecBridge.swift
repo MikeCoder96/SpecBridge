@@ -17,41 +17,32 @@ class RTMPManager: ObservableObject {
         rtmpStream = RTMPStream(connection: rtmpConnection)
     }
 
-    func startBroadcast(host: String, streamKey: String) async {
-        // 1. Pulizia URL: Se l'utente incolla già "rtmp://", non lo duplichiamo
+    // RTMPManager.swift
+
+    func startBroadcast(host: String, streamKey: String, settings: VideoQualitySettings) async {
+        // 1. Costruisci l'URL (come abbiamo visto prima)
         let rtmpURL: String
         if host.lowercased().hasPrefix("rtmp") {
             rtmpURL = host
         } else {
-            rtmpURL = "rtmp://\(host)/live" // Fallback per MediaMTX o simili
+            rtmpURL = "rtmp://\(host)/live"
         }
         
         connectionStatus = "Connecting..."
 
         do {
-            // 2. Configurazione dinamica del Bitrate
-            // Se è Twitch, forziamo un limite di sicurezza (6Mbps)
-            // Se è YouTube o Custom, possiamo osare di più se la connessione regge
-            let isTwitch = host.contains("twitch.tv")
-            let targetBitrate = isTwitch ? 6000 * 1000 : 12000 * 1000
-            
-            // Nota: 2208x2944 è molto pesante. Per stabilità suggerisco 1080x1440
-            // ma mantengo i tuoi valori adattandoli
+            // 2. Usa i valori che arrivano dall'oggetto 'settings'
             let videoSettings = VideoCodecSettings(
-                videoSize: .init(width: 2208, height: 2944),
-                bitRate: targetBitrate,
+                videoSize: .init(width: settings.width, height: settings.height),
+                bitRate: settings.bitrate, // Già moltiplicato per 1000 nel popup
                 profileLevel: kVTProfileLevel_H264_High_5_2 as String,
                 scalingMode: .trim,
-                maxKeyFrameIntervalDuration: 2, // Fondamentale per piattaforme social
-                expectedFrameRate: 30
+                maxKeyFrameIntervalDuration: 2,
+                expectedFrameRate: Float64(settings.frameRate)
             )
 
             try await rtmpStream.setVideoSettings(videoSettings)
-            
-            // 3. Connessione e Pubblicazione
             try await rtmpConnection.connect(rtmpURL)
-            
-            // Alcune piattaforme richiedono lo streamKey nel publish
             try await rtmpStream.publish(streamKey)
 
             connectionStatus = "Live"
@@ -59,10 +50,9 @@ class RTMPManager: ObservableObject {
         } catch {
             connectionStatus = "Error: \(error.localizedDescription)"
             isBroadcasting = false
-            print("RTMP Error: \(error)")
         }
     }
-
+    
     func stopBroadcast() async {
         do {
             try await rtmpStream.close()

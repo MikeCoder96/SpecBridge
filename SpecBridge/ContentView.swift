@@ -1,6 +1,19 @@
 import SwiftUI
 import MWDATCore
 
+struct VideoQualitySettings: Hashable {
+    var name: String
+    var width: Int
+    var height: Int
+    var bitrate: Int
+    var frameRate: Int
+
+    // Preset statici
+    static let p720 = VideoQualitySettings(name: "720p", width: 720, height: 960, bitrate: 2500 * 1000, frameRate: 24)
+    static let p1080 = VideoQualitySettings(name: "1080p", width: 1080, height: 1440, bitrate: 6000 * 1000, frameRate: 30)
+    static let custom = VideoQualitySettings(name: "Custom", width: 2208, height: 2944, bitrate: 15000 * 1000, frameRate: 30)
+}
+
 struct ContentView: View {
     @AppStorage("mediamtx_host") private var mediamtxHost: String = ""
     @AppStorage("mediamtx_stream_key") private var streamKey: String = ""
@@ -33,6 +46,102 @@ struct ContentView: View {
         .onOpenURL { url in
             Task { try? await Wearables.shared.handleUrl(url) }
         }
+    }
+}
+
+struct StreamSettingsPopup: View {
+    @Binding var settings: VideoQualitySettings
+    @State private var selectedType: String = "1080p" // Default
+    
+    // Campi temporanei per l'editing custom
+    @State private var customWidth: String = "2208"
+    @State private var customHeight: String = "2944"
+    @State private var customBitrate: String = "17000" // in kbps
+    
+    var onConfirm: (VideoQualitySettings) -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Select Quality") {
+                    Picker("Preset", selection: $selectedType) {
+                        Text("720p (Stable)").tag("720p")
+                        Text("1080p (High)").tag("1080p")
+                        Text("Custom (Advanced)").tag("Custom")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedType) { newValue in
+                        updateSettings(for: newValue)
+                    }
+                }
+
+                if selectedType == "Custom" {
+                    Section("Manual Parameters") {
+                        HStack {
+                            Text("Resolution")
+                            Spacer()
+                            TextField("W", text: $customWidth)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 60)
+                            Text("x")
+                            TextField("H", text: $customHeight)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 60)
+                        }
+                        
+                        HStack {
+                            Text("Bitrate (kbps)")
+                            Spacer()
+                            TextField("e.g. 15000", text: $customBitrate)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                } else {
+                    Section("Summary") {
+                        LabeledContent("Resolution", value: "\(settings.width)x\(settings.height)")
+                        LabeledContent("Bitrate", value: "\(settings.bitrate / 1000) kbps")
+                    }
+                }
+            }
+            .navigationTitle("Broadcast Settings")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onCancel() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Go Live") {
+                        if selectedType == "Custom" {
+                            finalizeCustomSettings()
+                        }
+                        onConfirm(settings)
+                    }
+                    .bold()
+                }
+            }
+        }
+        .presentationDetents([.medium, .large]) // Si espande se serve più spazio per il Custom
+    }
+
+    private func updateSettings(for type: String) {
+        switch type {
+        case "720p": settings = .p720
+        case "1080p": settings = .p1080
+        default: break // Mantiene i valori custom attuali
+        }
+    }
+
+    private func finalizeCustomSettings() {
+        settings = VideoQualitySettings(
+            name: "Custom",
+            width: Int(customWidth) ?? 2208,
+            height: Int(customHeight) ?? 2944,
+            bitrate: (Int(customBitrate) ?? 15000) * 1000,
+            frameRate: 30
+        )
     }
 }
 
@@ -196,6 +305,10 @@ struct SetupView: View {
 struct StreamingView: View {
     @ObservedObject var streamManager: StreamManager
     @ObservedObject var rtmpManager: RTMPManager
+    
+    @State private var showingSettingsPopup = false
+    @State private var selectedSettings: VideoQualitySettings = .p1080
+    
     var host: String
     var streamKey: String
     var onLogout: () -> Void
@@ -216,7 +329,7 @@ struct StreamingView: View {
             }
             .frame(height: 500)
             .clipShape(RoundedRectangle(cornerRadius: 12))
-
+            
             // ... (VStack delle info rimane uguale)
             VStack(spacing: 4) {
                 Text("Glasses: \(streamManager.status)")
@@ -230,15 +343,17 @@ struct StreamingView: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Pulsante Go Live centralizzato
             Button(streamManager.isStreaming ? "Stop Streaming" : "Go Live") {
-                Task {
-                    if streamManager.isStreaming {
+                if streamManager.isStreaming {
+                    // Se stiamo già trasmettendo, fermiamo tutto normalmente
+                    Task {
                         await streamManager.stopStreaming()
-                    } else {
-                        await streamManager.startStreaming()
-                        await rtmpManager.startBroadcast(host: host, streamKey: streamKey)
+                        await rtmpManager.stopBroadcast()
                     }
+                } else {
+                    // Se NON stiamo trasmettendo, NON chiamiamo startBroadcast qui.
+                    // Apriamo invece il popup che abbiamo configurato prima.
+                    showingSettingsPopup = true
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -253,6 +368,21 @@ struct StreamingView: View {
                 Button(action: onLogout) { // Esegue la stessa funzione del vecchio tasto
                     Image(systemName: "gearshape")
                 }
+            }
+        }
+        .sheet(isPresented: $showingSettingsPopup) {
+            StreamSettingsPopup(settings: $selectedSettings) { finalizedSettings in
+                showingSettingsPopup = false
+                Task {
+                    await streamManager.startStreaming()
+                    await rtmpManager.startBroadcast(
+                        host: host,
+                        streamKey: streamKey,
+                        settings: finalizedSettings
+                    )
+                }
+            } onCancel: {
+                showingSettingsPopup = false
             }
         }
     }
