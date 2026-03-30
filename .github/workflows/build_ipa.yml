@@ -32,6 +32,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deriveddata-
 
+      - name: Download iOS platform
+        run: xcodebuild -downloadPlatform iOS
+
       - name: Resolve Swift packages
         run: |
           WORKSPACE=$(find . -maxdepth 2 -name '*.xcworkspace' ! -path '*.xcodeproj/*' 2>/dev/null | head -1)
